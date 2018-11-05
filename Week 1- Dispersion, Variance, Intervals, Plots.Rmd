@@ -1,0 +1,260 @@
+---
+title: 'Stats Self Learning: Week 1'
+author: "Benjamin Kinsella"
+date: "11/3/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(mosaic)
+library(ggplot2)
+```
+
+#### Introduction
+
+I've been slowly getting together some great data sets to practice running basic to advanced models. Special thanks to Dr. Scott from UT Austin for including these data sets on his github. In this week, my outputs will touch on the following topics measuring variation in categorical and numerical variables, boxplots and dotplots, and scatter plots and correlation. In doing so, I'll draw upon three data sets:
+
+1. City temperatures in San Diego, CA and Rapid City, SD
+2. Test scores and GPA for University of Texas graduates
+3. Calorie consumption among Chipotle fans
+
+Let's get started with the first data set.
+
+## Part 1: City Temperatures
+
+In this first walk through, I will be describing dispersion in a single quantitative variable, temperature. I will change several of the default settings in R, such as changing axis labels and the number of breaks in a histogram. To begin, let us examine the data set, citytemps.csv, which captures the daily average temperatures in San Diego, CA and Rapid City, SD.
+
+```{r, echo = TRUE}
+citytemps <- read.csv("http://jgscott.github.io/teaching/data/citytemps.csv")
+
+summary(citytemps)
+```
+
+Great! What do we observe? For starters, we see that we have 17 years of data, begining in 1995 reaching until 2011. To get a better idea of the distribution of temperatures, let us plot the temperatures in San Diego with two histograms, one with 30 bins:
+
+```{r, echo= TRUE}
+hist(citytemps$Temp.SanDiego, breaks = 30)
+```
+
+Now let's add in a vertical line to show the sample mean (63 degrees)
+
+```{r, echo = TRUE}
+muSanDiego <- mean(citytemps$Temp.SanDiego)
+hist(citytemps$Temp.SanDiego, breaks = 30)
+abline(v=muSanDiego, col = "red")
+```
+
+See the vertical line? :) 
+
+###Dispersion 
+
+Now, besides mean, we also know another way is to look at standard deviation (SD), another measurement of variation or disperation of a set of values. Or we could also look at coverage intervals, intervals covering a specific fraction of observations. That is, if we wanted to get a central 50% coverage interval, we'd need the 25th and 75th percentiles of the distribution. By definition, 50% of the observations are between these two numbers. We get this from the qdata function. 
+
+So let's do just that.
+
+```{r, echo = TRUE}
+#First the SD
+sd(citytemps$Temp.SanDiego)
+
+#Now the coverage intervals
+qdata(citytemps$Temp.SanDiego)
+
+#Or...let's asks for different quantiles by passing in a flag called "p" (for probability)
+qdata(citytemps$Temp.SanDiego, p = c(0.05, 0.95))
+
+#And lastly, using inverse caluclation lets us use the pdata function to ask which quantile a specific value corresponds to
+pdata(citytemps$Temp.SanDiego, q = c(60, 70))
+```
+
+It may be a bit laborious to go through this, but what do these data say? Well, the SD is 5.69, so a standardized way to look at dispersion (that is, a lower SD would indicate that data points tend to be close to the mean. A higher means that they are spread out over a wider range of values). 
+
+Now onto the coverage intervals. These data show us, for example, the 75th quartile of the data is at 67.3 degrees. Modying the default behavior shows us the 5th and 95th percentiles, 54.2 and 72.6, respectively. And again, if we wanted specific values, like "At what interval is 60 and 70 degrees?" The 88th percentile. 
+
+Next up, we want to look at z-scores, a standard score that indicates how many SDs an element is from the mean. For example, which temperature is more extreme? 50 degrees in San Diego or 10 degrees in Rapid City? In an absolute sense, 10 degrees is more extreme. But what about in a relative sense? That is, is a 10 degree temperature more extreme for Rapid City than a 50 degree day is for San Diego? 
+
+This question could certainly be answered using quantiles, which you've already learned how to handle. But let's discuss a second way: by calculating a z-score for each temperature.
+
+A z-score is the number of standard deviations by which some observation is above the mean. (So if a z-score is negative, then the corresponding observation is below the mean.) To calculate a z-score, we subtract the mean and divide by the standard deviation. For a 50-degree day in San Diego, this is:
+
+```{r, echo = TRUE}
+(50 - mean(citytemps$Temp.SanDiego)) / sd(citytemps$Temp.SanDiego)
+```
+
+So it's about 2.3 SDs below the mean. On the other hand, for a 10-degree day in Rapid City:
+
+```{r, echo = TRUE}
+(10 - mean(citytemps$Temp.RapidCity)) / sd(citytemps$Temp.RapidCity)
+```
+
+Or about 1.9 standard deviations below the mean. Thus a 50-degree day in San Diego is actually more extreme than a 10-degree day in Rapid City!
+
+As this example suggests, z-scores are useful for comparing numbers that come from different distributions, with different statistical properties. It tells you how extreme a number is, relative to other numbers from that some distribution.
+
+###Fancier Histograms
+Before completing this section, let's look at a few fancier histograms. One point of departure is to change the default title and x-axis label? That'seasy, just use xlab and ylab. We can also stack histograms from the two cities on top of each other, making a multi-frame plot. That is, in the first line, we make a multi-frame plot (filled in along the rows) with 2 rows and 1 column. THe next two plotting commands then fill in the two frames. We could use the following code:
+
+```{r, echo = TRUE}
+par(mfrow=c(2,1))
+hist(citytemps$Temp.SanDiego)
+hist(citytemps$Temp.RapidCity)
+```
+
+
+This won't do: notice that the axes and bin sizes differ between the two plots. This makes it hard to compare the two distributions at a glance. We need to align these two plots to have the same axes and bins. Just as we did above, we'll do this by passing additional flags to the hist function.
+
+First, we must define a set of breakpoints for the histogram grams. We'll do this with the seq (which stands for sequence) command. This says to make a sequence running from -20 to 92 degrees in increments of 2. You'll see the whole sequence if you type mybreaks directly into the console". After, we can make the histograms using these custom bins. We'll also change the x and y axes using the xlim and ylim arguments:
+
+```{r, echo = TRUE}
+mybreaks = seq(-20, 92, by=2)
+
+par(mfrow=c(2,1))
+hist(citytemps$Temp.SanDiego, breaks=mybreaks, xlim=c(-20,100), ylim=c(0, 760))
+hist(citytemps$Temp.RapidCity, breaks=mybreaks, xlim=c(-20,100), ylim=c(0, 760))
+
+```
+
+This looks nice, and also makes our tables comparable and the distributions themselves much easier to compare.
+
+Now, one last histogram that is much fancier, which uses a set of commands.
+
+```{r, echo = TRUE}
+mybreaks = seq(-20, 92, by=2)
+par(mfrow=c(1,1), mar=c(3,0,1,3), mgp=c(2,1,0))
+hist(citytemps$Temp.SanDiego, breaks=mybreaks, xlab="Average Daily Temperature (F)", main="", border="darkgrey", col="grey", axes=FALSE, ylim=c(0, 760))
+hist(citytemps$Temp.RapidCity,breaks=mybreaks,add=TRUE, border=rgb(0,100,0,100,maxColorValue=255), col= rgb(0,100,0,50,maxColorValue=255))
+axis(4,at=seq(0,700,by=100), las=1,tick=FALSE)
+axis(1,pos=0)
+text(55, 770, "San Diego, CA", pos=4, font=2)
+text(30, 260, "Rapid City, SD", pos=4, font=2)
+```
+
+Now on to the next data set!
+
+## Part 2: Test scores and GPA for university graduates
+
+This data set examines SAT and GPA scores for graduates in a select number of schools. Thus, I'll go through and show how to summarize and visualize relationships between:
+
+1. Numerical and categorical variables, vis a vis group-wise means and boxplots
+2. Two numerical variables, via scatter plots and correlation coefficients.
+3. Three variables using lattice plots.
+
+Let's get started:
+
+```{r, echo = TRUE}
+ut2000 <- read.csv("http://jgscott.github.io/teaching/data/ut2000.csv")
+summary(ut2000)
+```
+
+The preliminary data shows SAT and graduating GPA scores for every student who entered the UT at Austin in fall of 2000. To get a better understanding of between-group and within-group variation, we can first look at each school. The 10 different schools is a natural grouping variable here, so let's look at a boxplot of SAT math scores compared to each college: 
+
+```{r, echo = TRUE}
+bwplot(SAT.Q ~ School, data = ut2000, main = "SAT Math Scores by College")
+```
+
+The above boxplot gives us a sense of whether the between-group or within-group variation of SAT math scores is larger (note, the names of the colleges along the x-axis run together. This can be fixed by clicking "zoom" in the plots tab and manually resizing the window). Now, these data raise two questions: 1) How much do the central dots for each group differ from one another (i.e., between-group variation)? and 2) How spread out are the cases within each group (i.e., within-group variation)? We'll tackle each one separately.
+
+For the between-group variation, let's explore how much the central dots for each group differs from one another. 
+
+```{r, echo = TRUE}
+mean(SAT.Q ~ School, data = ut2000)
+```
+
+Eye balling this a bit, it look as though the typical difference between group means is about 40 points. But what about within-group variation, that is how spread out are the cases within each group.
+
+```{r, echo = TRUE}
+sd(SAT.Q ~ School, data = ut2000)
+```
+
+Recall SDs are a standardized way of looking at how much dispersion exists in a population. So it look as if SAT math scores vary most within Communications (82.63), and least within Social Work (49.64). Note, a good command is favstats, which computes both the mean and SD, along with other favorite statistics (min/max values, quartiles, and median) for each college.
+
+###Two numerical variables
+
+Easy enough, the basic tool to visualize the relationship between two numerical variables is the scatter plot. Let's make a plot that shows graduating GPA versus SAT math scores for all students. I got a bit fancy in this plot over a regular one, showing the type of mark (pch), size (cex), and color (col) of the points (I also included the correlation coefficient):
+
+```{r, echo = TRUE}
+plot(GPA ~ SAT.Q, data = ut2000)
+
+plot(GPA ~ SAT.Q, data = ut2000, pch = 19, cex = 0.5, col = "skyblue3")
+
+cor(GPA ~ SAT.Q, data = ut2000)
+```
+
+Just a quick observation about the above plot, we observe students' GPA on the y-axis, compared to students' SAT scores on the x-axis. Why not SAT on the y-axis? Well, we could, but let's consider Y as the dependent variable. So in what I showed, a student's undergraduate GPA is a function of SAT. Would it make sense that a student's SAT from high school be a function of an undergraduate's GPA? Not really.
+
+###Scatter plot matrix
+
+To visualize the relationships between 3+ numerical variables, one option is to create a "pairs plot" showing each bivariate relationship. In other words, below I'll make a matrix of scatter plots corresponding to the 1st, 2nd, and 5th columns of the ut2000 data set (for SAT Verbal, SAT Math, and GPA, respectively):
+
+```{r, echo = TRUE}
+pairs(ut2000[,c(1, 2, 5)])
+```
+
+Nicee! Basically the syntax above does the following: ut2000[,c(1, 2, 5)] says: "Give me all rows from the 1st, 2nd, and 5th columns." If I wanted the first 100 rows, what would it be? That's right, ut2000[1:100, c(1, 2, 5)]. But no worries, by leaving it blank, the default setting in R is to give us ALL rows. 
+
+In terms of efficiency, do you see the redundancy of this plot? Given the "pairs" between SAT.V, SAT.Q, and GPA, there is overlap. SAT.V (row 1, column 3) contains the same info as GPA (row 3, column 1). One way to solve this is flip which variables appear on the vertical axis. Let's pass the following:
+
+```{r, echo = TRUE}
+pairs(ut2000[,c(1, 2, 5)], upper.panel = NULL)
+```
+
+There you go! The labels are now on the right, avoiding redundancy.
+
+###Lattice plots
+
+Last up, we may want to see if this bivariate relationship plotted separately for each of the ten colleges. We do this by using a lattice plot, allowing us to see whether - and how - the relationship between two variables is modulate by a third variable. Do so by using the xyplot:
+
+```{r, echo = TRUE}
+xyplot(GPA ~ SAT.Q | School, data = ut2000)
+```
+
+Basically, taking the syntax, you're taking GPA as a function of SAT "conditional upon" or "stratified by" (in this case, by colleges). 
+
+Another fun way is making a lattice of boxplots. So here, you're comparing GPA versus school, stratified by SAT. But instead of points, we'll use boxplots, which include the median, quartiles, and min/max values. To do so, use the bwplot command (Be careful though, the axis labels will run together if you do not rotate the college names 45 degrees using the rot function:
+
+```{r, echo = TRUE}
+ut2000$SATcat = cut(ut2000$SAT.C, breaks=c(0, 1000, 1200, 1400, 1600))
+
+bwplot(GPA ~ School | SATcat, data=ut2000, scales=list(x=list(rot=45)))
+
+
+```
+
+
+##Part 3: How many calories do people eat at Chipotle?
+
+This data set contains the calorie count for 3042 meals ordered from Chipotle through GrubHub. The data set was screened for meals that are very likely to be for a single person (e.g. they contain no more than one main item like a burrito or order of tacos, perhaps in addition to one side item and/or one drink).
+
+In this assignment, I will make a histogram of the distribution of calorie counts so that the width of each bin is 40 calories. 
+
+First, here is the data.
+```{r, echo = TRUE}
+Chipotle <- read.csv("http://jgscott.github.io/teaching/data/burritos.csv")
+summary(Chipotle)
+str(Chipotle)
+```
+
+##Histograms
+
+To get started with this data, let's explore it using a histogram. 
+
+```{r, echo = TRUE}
+hist(Chipotle$calories, breaks = 20)
+```
+
+We can observe in the above histogram a fairly regular distribution of calorie consumption, with the majority of individuals consuming meals about 1,000s. Though one can see noticeable spikes at certain values (e.g. around 700, 900, 1000, 1600). 
+
+Let's look at quartiles. First we examine the quartiles and then look at fraction of meals more than certain values.
+
+```{r, echo = TRUE}
+qdata(Chipotle$calories)
+
+pdata(Chipotle$calories, q = c(1600))
+
+qdata(Chipotle$calories, p = c(0.10, 0.90))
+```
+Furthermore, there are several meals above 1,600 calories. We see above the fraction of meals that contain more than 1600 calories (The FDA's recommendation for most adults is between 1600 and 2400 calories per day.) Using the pdata command, we observe that this value roughly lies at the 89th quartile. 
+
+Likewise, the 80% coverage interval for the data--that is, an interval that covers the central 80% of the distribution -- is calculated using the qdata command. So 80% would lie between 10% and 90%. Using p= c(0.10, 0.90), we see the 80% coverage interval existing between 620 and 1,614.5 calories.
+
