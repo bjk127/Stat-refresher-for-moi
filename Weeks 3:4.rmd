@@ -1,0 +1,554 @@
+---
+title: 'Weeks 3 and 4: Main effects/interactions and prediction intervals'
+author: "Benjamin Kinsella"
+date: "11/14/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(mosaic)
+library(ggplot2)
+```
+
+## Week 3 of stats for moi. 
+
+
+###Kidney function and aging
+Here we'll be looking at naive prediction intervals and the decomposition of variance. By the time I've gone over the data, hopefully I'll have learned to create a prediction interval to quantify forecasting uncertainty, as well as computed R-squared of a linear model.
+
+```{r, echo = TRUE}
+creatine <- read.csv("http://jgscott.github.io/teaching/data/creatinine.csv")
+summary(creatine)
+```
+
+So looking at the summary, we see that there are two variables: (1) Age of patient and (2) Creatclear, the patient's creatine-clearance rate measured in ml/minute. According to the [National Institutes of Health](http://www.nlm.nih.gov/medlineplus/ency/article/003611.htm), "The creatinine clearance test helps provide information about how well the kidneys are working. The test compares the creatinine level in urine with the creatinine level in blood.... Creatinine is removed, or cleared, from the body entirely by the kidneys. If kidney function is abnormal, creatinine level increases in the blood because less creatinine is released through the urine."
+
+
+Given the two  variables, let's start by looking at the relationship between creatine clearance and age.
+
+```{r, echo = TRUE}
+#Pirst the plot
+plot(creatclear ~ age, data = creatine)
+
+#Now fit a straight line to the data using OLS
+lm1 = lm(creatclear ~ age, data = creatine)
+
+#Extract the coefficients and plot the line
+coef(lm1)
+
+abline(lm1)
+```
+
+So there is no doubt that a decline in kidney function is something that we can all look forward to as we age! Having said that, according to the NIH, the normal range of values for creatine clearance is 97 to 137 ml/min. We can verify that these figures are reasonably close to the endpoints of a 95% coverage interval for our sample of men by using the quantile function.
+
+```{r, echo = TRUE}
+quantile(creatine$creatclear, probs = c(0.025, 0.975))
+```
+
+This looks good. But there is an interesting aspect here. Since the expected clearance rate changes as a function of the patient's age, one could reason that the normal range of clearance rates should change with the patient's age as well. That is, a 35 year old's average rate would look different than someone who is 65. Consider the case of a 50-year old man. We can use the fitted line to predict his creatine clearance rate as follows:
+
+```{r, echo = TRUE}
+betahat <- coef(lm1)
+newx <- 50
+yhat <- betahat[1] + betahat[2]*newx
+yhat
+```
+
+Isn't this interesting? We basically used the formula to figure out Y (outcome variable). However, observe that the creatine clearance rate of the men in our sample deviated from the line. By how much? The simplest way of quantifying this is to compute the standard deviation of the residuals. THis quantifies the typical accuracy with which the model predicts creatine clearance rate. 
+
+```{r, echo = TRUE}
+sigma <- sd(resid(lm1))
+sigma
+```
+
+So our SD is about 6.88. Let's use this information to construct a prediction interval for our hypothetical 50-year old man. We center our interval at the model's prediction and use some multiple - let's say 2 - of the residual SD to determine the width of the interval.
+
+```{r, echo = TRUE}
+yhat - 2*sigma
+
+yhat + 2*sigma
+```
+
+Notice that our interval for a 50-year old man is a good bit narrower (103.05 to 130.60 ml/min) than the NIH's age-independent interval (97 to 137 ml/min). On the other hand, if we were to have chosen a 40-year old man, the interval would have been different. In this way, the linear model gives us a family of prediction intervals, one for every possible value of the predictor variable. 
+
+### Visualizing the intervals and measuring their accuracy
+We can also visualize the whole family of intervals at once by plotting their lower and upper bounds as a function of age. The upper-bound line and lower-bound line will have the same slope as the fitted line. However, the intercepts will be shifted up and down accordingly.
+
+```{r, echo = TRUE}
+#Plot the data and show the straight-line fit
+plot(creatclear ~ age, data = creatine)
+abline(betahat[1], betahat[2])
+
+#Now shift the intercept of the fitted line up and down to get the interval bounds
+abline(betahat[1] + 2*sigma, betahat[2], col = "red")
+abline(betahat[1] - 2*sigma, betahat[2], col = "red")
+```
+
+In other words, we saw from above that there were differences with specific age ranges, such that a 50-year old exhibited a different intercept than that shown by our linear model. Now, what if we wanted to quantify the accuracy of our family of prediction intervals? Let's count the number of times our intervals missed - that is, failed to cover - the actual creatinine clearance rate of a man in our data set. I'll first construct the lower and upper bounds of the prediction interval for everyone:
+
+```{r, echo = TRUE}
+yhat_all <- fitted(lm1)
+lower_bound <- yhat_all - 2*sigma
+upper_bound <- yhat_all + 2*sigma
+
+#Store the actual values along with the intervals in a df
+predinterval_all <- data.frame(creatine, lower_bound, yhat_all, upper_bound)
+
+#Show the first 10 rows of this df
+head(predinterval_all, n = 10)
+```
+
+So we see in the abov table all the ages, creatinine levels, and lower/upper bound values of the model. Now let's count how many times someone in our data set had an actual creatinine-clearance rate that fell outside our family of prediction intervals. We could do this manually by checking each row of the matrix stored above, predinterval_all, or we can ask R to count for us:
+
+```{r, echo = TRUE}
+misses_above <- sum(creatine$creatclear > upper_bound)
+misses_below <- sum(creatine$creatclear < lower_bound)
+misses_above + misses_below
+
+(misses_above + misses_below)/nrow(creatine)
+```
+
+Great! So looks like 8 data points, or about 5% of the total, fell outside our family of prediction intervals. That is, our intervals have an empirical coverage (i.e., accuracy) rate of 5%.
+
+###Using the 'predict' function as a shortcut
+The above examples gave some intuition about what a prediction interval is, as well as how its accuracy is measured. But admittedly, the commands we went through are a bit tedious. Luckily, there is a shortcut: using R's predict function.
+
+There are two commands in the following block of code. The first constructs a prediction intervals for the first 6 cases.
+
+```{r, echo = TRUE}
+pred_interval <- predict(lm1, interval = 'prediction', level = 0.95)
+
+head(pred_interval)
+```
+
+We get three tables above: (1) fit, which gives the fitted values from the model; (2), lwr, which gives the lower bound ranges and (3) upr, which gives the upper bound ranges of the prediction interval. As before, we can combine these with the orginal data set into a new data frame:
+
+```{r, echo = TRUE}
+predinterval_all <- data.frame(creatine, pred_interval)
+
+#Show the first 10 rows of data frame
+head(predinterval_all, n = 10)
+```
+
+It is important to note that these predictions on current data refer to future responses. That is, suppose we saw a new group of patients whose ages were the same as those in the original data set. These prediction intervals give us a range of plausible values for those patients' creatinine clearance levels. 
+
+Also, note that you can change the coverage level as desired by changing the level = 0.95 flag to whatever you want.
+
+### Predictions on new data
+Before moving on to R^2, let's think about if we wanted to form prediction intervals for a genuinely new group of pateints. More specifically, let's say we were interested in three patients whose ages are 40, 50, and 60.
+
+To do this, we can use the predict function. There's a two step process: (1) Create a new df corresponding to our new group of patients. This df must have the same predictor variable as the original df (i.e., age); and (2) We input this new df into the predict function together with the model we fit to the original data set. It looks likes this:
+
+```{r, echo = TRUE}
+#1. Create new data frame
+new_patients <- data.frame(age = c(40, 50, 60))
+
+#2. Input this data frame to the predict function
+predinterval_new <- predict(lm1, newdata = new_patients, interval = 'prediction', level = 0.95)
+
+#3. Output the x values along with the endpoints and centers of the intervals in a data frame.
+data.frame(age = new_patients$age, predinterval_new)
+```
+
+The predictions are ordered in the same way as the new_patients df. In other words, they are ordered by the ages, 40, 50, 60.
+
+###The variance decomposition and R-squared
+
+To introduce the idea of the variance decomposition and R^2, let's compare the following three quantities:
+-The SD of the original response variable (creatinine clearance)
+-The SD of the fitted values from our linear model
+-The SD of the residuals
+
+```{r, echo = TRUE}
+sigma_y <- sd(creatine$creatclear)
+sigma_yhat <- sd(fitted(lm1))
+sigma_e <- sd(resid(lm1))
+```
+
+A remarkable fact is that these three numbers form a [pythagorean triple](http://mathworld.wolfram.com/PythagoreanTriple.html). To verify this, let's do the following code:
+
+```{r, echo = TRUE}
+sigma_y^2
+sigma_yhat^2 + sigma_e^2
+```
+
+Because the variance is the square of the SD, we could also have computed the same numbers using R's var function:
+
+```{r, echo = TRUE}
+var(creatine$creatclear)
+var(fitted(lm1)) + var(resid(lm1))
+```
+
+This is not just a coincidence for this data set. It's a fundamental fact about linear statistical models fit by ordinary least squares. In statistics, this fact is called the "decomposition of variance," but really it's the Pythagorean theorem in disguise.
+
+Furthermore, the decomposition of variance leads to R^2 (sometimes called the "coefficient of determination"), which is the standard measure of the predictive ability of a linear statistical model. It is computed as the ratio of the variance of the fitted values to the variance of the original data points. For a model fit by OLS, it is always between 0 and 1:
+
+```{r, echo = TRUE}
+R2 <- var(fitted(lm1)) / var(creatine$creatclear)
+R2
+```
+
+This number means "about 67% of the total variation in creatinine clearance rate is predictable using age." Luckily, there's a shortcut in the mosaic package. We use the rsquared function to directly extract this information from the fitted model object, as well as the summary function:
+
+```{r, echo = TRUE}
+rsquared(lm1)
+summary(lm1)
+```
+
+The rsquared function worked. As well as in the summary output where you'll notice the "Multiple R-Squared"
+
+## Week 4
+The exercises and readings from this week, I focus on:
+- Numerical outcomes with more than one categorical predictor
+- Dummy variable and 
+- Interaction terms using an analysis of variance (ANOVA).
+
+
+### Reaction time in video games
+This section looks at modeling numerical outcomes in terms of multiple categorical predictors. After going through this practice set, one should have a better understanding on the appropriate use and interprettation of dummy variables and interaction terms.
+
+A brief introduction. This data set on reaction-time comes from an experiment run by a British video-game manufacturer in an attempt to calibrate the level of difficulty of certain tasks in the video game. Subjects in this experiment were present with a simple "where's Waldo" style visual scene. The subjects had to (1) find a number (i.e., 1 or 2) floating somewhere in the scene; (2) identify the number; and (3) press the corresponding button as quickly as possible. The response variable is their reaction time. The predictors are different characteristics of the visual scene.
+
+
+```{r, echo = TRUE}
+rxntime <- read.csv("http://jgscott.github.io/teaching/data/rxntime.csv")
+summary(rxntime)
+```
+
+For this exercise, the variables of interest are:
+- PictureTarget.RT: The subject's reaction time in milliseconds.
+- Subject: A numerical identifier for the subject undergoing the test.
+- FarAway: A dummy variable. Was the number to be identified far away (1) or near (0) the visual scene?
+- Littered: The British way of saying whether the scene was cluttered (1) or mostly free of clutter (0).
+
+To get started, let's take a look at some plots to show between-group and within-group variation.
+
+```{r, echo = TRUE}
+boxplot(PictureTarget.RT ~ FarAway, data = rxntime)
+boxplot(PictureTarget.RT ~ Littered, data = rxntime)
+boxplot(PictureTarget.RT ~ factor(Subject), data = rxntime)
+```
+
+
+### Main effects
+
+For our first model, we'll use "littered" (aka messy) as a predictor:
+
+```{r, echo = TRUE}
+lm1 <- lm(PictureTarget.RT ~ Littered, data = rxntime)
+```
+
+Remember baseline/offset form: the coefficients of this model are simply a different way of expressing the group means for the littered and unlittered scores. 
+
+```{r, echo = TRUE}
+mean(PictureTarget.RT ~ Littered, data = rxntime)
+coef(lm1)
+
+#Add the baseline to the second group mean
+506.7104 + 87.174
+```
+
+Now we will add a second dummy variable for whether for whether the number to be identified was near or far away:
+
+```{r, echo = TRUE}
+lm2 <- lm(PictureTarget.RT ~ Littered + FarAway, data = rxntime)
+coef(lm2)
+
+#The sum of the two individual effects:
+87.46354 + 50.13437
+```
+
+In other words, this model says that the predicted "baseline" reaction time (for unlittered scenes with a nearby target) is 481.64 - that is, the intercept when both dummy variables are set to 0. For scenes that were littered, we'd predict a reaction time of 87.5 ms longer than the baseline. For scenes with a far-away taret, we'd predict a reaction time of 50.1 ms longer than the baseline. For scenes that are both littered and far away, the model tells us to simply add the sum of the two individual effects. That is, according to this model, we'd predict these scenes to be 137.6 ms longer than baseline. For reasons that will become clear in a moment, we refer to the Littered and FarAway coefficient as the "main effects" of the model.
+
+###Interactions
+
+The model we just fit assumed that the Littered and FarAway variables had individuals additive effects on the response. However, what if scenes that are both Littered and FarAway are even harder than we'd expect based on the individual effects? If we think this may be the cause, we should consider adding an interaction term to the model:
+
+```{r, echo = TRUE}
+lm3 <- lm(PictureTarget.RT ~ Littered + FarAway + Littered:FarAway, data = rxntime)
+
+summary(lm3)
+```
+
+Like before, the first two terms are called "main effects." The last term in the model is an interaction variable with estimated coefficient of 39.1. It allows the joint effect of the two predictors to be different than the sum of the individual (main) effects.
+
+To understand this output, let's work through the predictions of the above model based on the fitted coefficients.
+- *Baseline scenes* (Littered = 0, FarAware = O): Baseline only 491.4 ms. That is, when the scene is not cluttered and the number was not far away, the reaction time is only 491.ms. 
+- *Littered = 1, FarAware = 0 scenes*: Add the baseline and the Littered main effect (491.4 + 67.9 = 559.3 ms). Thus, when the scene is cluttered, but the number to identify is far away, the reaction time is projected at 559.3 ms.
+- *FarAway = 1, Littered = 0 scenes*: Add the baseline and the FarAway main effect (491.4 + 30.6 = 522 ms). So when the number is far away, but the scene is not cluttered, reaction time is 522 ms.
+- *Littered = 1, FarAway = 1 scenes*: Add to the baseline both main effects and the interaction term (491.4 + 67.9 + 30.6 + 391.1 = 629 ms).
+
+Notice that to get the prediction for scenes that are both littered and far away, we add the baseline, both main effects, AND the interaction term. The resulting predictions match up exactly with the group means we calculate if we were to stratify the scenes into all four possible combinations of Littered and FarAway.
+
+```{r, echo = TRUE}
+mean(PictureTarget.RT ~ Littered + FarAway, data = rxntime)
+```
+
+Thus, a reasonable question is: Why both with the extra complexity of main effects and interactions if all we're doing is computing the group-wise means for all four combinations of the two variables? In fact, if we only have these two variables, there isn't really a compelling reason to do so. However, let's suppose we want to add a *THIRD* variable:
+
+```{r, echo = TRUE}
+lm4 <- lm(PictureTarget.RT ~ Littered + FarAway + Littered:FarAway + factor(Subject), data = rxntime)
+summary(lm4)
+```
+
+Above, we added subject-level dummy variables to account for between-subject variability. For this reason, R-squared jumped from 13% to 23%. But we're still assuming that the effect of the Littered and FarAway variables is the same for every subject. So we have 15 parameters to estimate: An intercept/baseline, two main effects for Littered and FarAway, one interaction term, and 11 subject-level dummy variables. Suppose that instead we were to look at all the possible combinations of subject, Littered, and FarAway variables, and then compute the groupwise means:
+
+```{r, echo = TRUE}
+mean(PictureTarget.RT ~ Littered + FarAway + factor(Subject), data = rxntime)
+```
+
+Wow! Now we have *48* parameters to estimate - that is, the group mean for each combination of 12 subjects and 4 experimental conditions)!! Moreover, we're not implicitly assuming that the Littered and FarAway variables affect each person in a different way, rather than all people in the same way. There's no way to reproduce the output of the model that we fit in lm4 by computing group-wise means.
+
+The above example should convey the power of using dummy coding and interactions to express how a response variable changes as a function of several grouping variables. It allows us to be selective: Some variables may interact with each other, while other variables have only a "main effect" that holds across the entire data set, regardless of what values the other predictors take. 
+
+Of course, the choice of which variables fall in which category can be guided both by the data itself and by knowledge of the problem at hand. This is an important modeling decision - and one that I will continue to explore in these exercises.
+
+### Analysis of Variance (ANOVA)
+Finally, what if we wanted to quantify how much each predictor was contributing to the overall explanatory power of the model? A natural way to do so is to compute the amount by which the addition of each predictor reduces the unpredictable (residual) variation, compared to a model without that predictor. R's 'anova' function computes this for us:
+
+```{r, echo = TRUE}
+anova(lm4)
+```
+
+The "Sum Sq" (for Sum of Squares) column is the one that is of interest. This column is computed by adding the predictors sequentially and asking: By how much did the residual SS drop when this predictor was added to the previous model? (Remember the variance decomposition here.) Thus, the larger the entry in the "Sum Sq" column, the more that variable improved the predictive ability of the model. The final entry (Residuals) tells you that the residual SS after all variables were added. This serves as a useful basis for comparison when trying to interpret the magnitude of the other entries in this column.
+
+This breakdown of the sums of squares into its constituent parts is called the "analysis of variance" for the model, or "ANOVA" for short.
+
+### A modified ANOVA table
+However, one could say that the basic R anova table is hard to read. After all, how is a normal human being supposedto interpret sums of squares? THe numbers are on a completely non-intuitive scale.
+
+J. Scott from UT Austin created a different version of an ANOVA table, called "simple_ANOVA", which is found [here](https://jgscott.github.io).
+
+```{r, echo = TRUE}
+# Load some useful utility functions
+source('http://jgscott.github.io/teaching/r/utils/class_utils.R')
+```
+
+Now you can call the simple_anova function in the same way you call the anova one:
+
+```{r, echo = TRUE}
+simple_anova(lm4)
+```
+
+As before, each row involves adding a variable to the model. But the output is a little diffrent:
+- *Df*: How many degrees of freedom (i.e., parameters added to the model) did this variable use?
+- *R2*: What was the R-squared of the model?
+- *R2_improve*: How much did R-squared improve (go up), compared to the previous model, when we added this variable?
+- *sd*: What was the residual standard deviation?
+- *sd_improve*: How much did the residual standard deviation improve (go down), compared to the previous model when we added this model?
+- *pval*: Let's not worry too much about this now. But this corresponds to a hypothesis test (specifically, an F-test) about whether the variable appears to have statistically significant relationship with the response.
+
+It seems that these quantities convey a lot more useful information than a basic anova table. Just a note to remember that if you want to use the simple_anova command in the future, you'll always have to preface it by sourcing the function using the command we saw above:
+
+```{r, echo = TRUE}
+# Put this at the top of any script where you use "simple_anova"  
+source('http://jgscott.github.io/teaching/r/utils/class_utils.R')
+```
+
+
+## House Prices
+
+The last exercise I'll go through this week is House Prices in Kansas City. The goal of walking through this are as follows:
+- Fit regression models with a single numerical predictor and multiple categorical predictors
+- Correctly interpret dummy vaiables and interactions terms in linear regression models
+- Correctly interpret an ANOVA table in a model with correlated predictors.
+
+
+```{r, echo = TRUE}
+house <- read.csv("http://jgscott.github.io/teaching/data/house.csv")
+summary(house)
+```
+
+So we see that there are a lot of variables in this data set. But we'll focus on four:
+- *Price*: The sales price of the house
+- *sqft*: The size of the house in square feet
+- *nbhd*: A categorical variable indicating which of the three neighborhoods the house is in.
+- *brick*: A categorical variable indicating whether the house is made of brick.
+
+We'll begin by fitting a regression line for the price of the house in terms of its square footage:
+
+```{r, echo = TRUE}
+plot(price ~ sqft, data = house, pch = 19)
+
+lm0 <- lm(price ~ sqft, data = house)
+abline(lm0)
+coef(lm0)
+```
+
+According to the estimate slope of this model, each additional square foot costs roughly $70. However, the following two plots might give you cause for concern about this answer:
+
+```{r, echo = TRUE}
+#Price by neighborhood
+bwplot(price ~ nbhd, data = house)
+
+#Square foot by neighborhood
+bwplot(sqft ~ nbhd, data = house)
+```
+
+We see in the above boxplots that both the prices AND house sizes differ systematically across neighborhoods. Might the neighborhood be a confounding variable that distors our estimates of size vs price relationship? For example, some neighborhoods might be more desirable because of their location, not merely because of the size of its houses. 
+
+Let's look at the neighborhoods individually to get a sense of whether this plausible. First, we'll examine neighborhood 1:
+
+```{r, echo = TRUE}
+plot(price ~ sqft, data = subset(house, nbhd == "nbhd01"), pch = 19)
+lm1 <- lm(price ~ sqft, data = subset(house, nbhd == "nbhd01"))
+abline(lm1)
+```
+
+We see in the above output that within neighborhood 1 alone, each additional square costs about $40. What about neighborhood 2?
+
+```{r, echo = TRUE}
+plot(price ~ sqft, data = subset(house, nbhd == "nbhd02"), pch = 19)
+lm2 <- lm(price ~ sqft, data = subset(house, nbhd == "nbhd02"))
+abline(lm2)
+```
+
+Here, the size premium is about $50 per square foot. And neighborhood 3?
+
+```{r, echo = TRUE}
+plot(price ~ sqft, data = subset(house, nbhd == "nbhd03"), pch = 19)
+lm3 <- lm(price ~ sqft, data = subset(house, nbhd == "nbhd03"))
+abline(lm3)
+```
+
+Again, about $50 per square foot. So let's recap:
+- In each individual neighborhood, the price of an additional square foot is between $40 and $50 dollars. 
+- However, for all three neighborhoods together, the price of an additional square foot is $70. Hmmm...
+
+This is a classic example of an aggregation paradox - that is, when something appears to hold for a group (all three neighborhoods together), but simultaneously fails to hold for the individual members of that group. The following picture may give some intuition for what's going on here. I'll plot the points for the individual neighborhoods in different colors:
+
+```{r, echo = TRUE}
+# We'll plot the whole data set
+plot(price ~ sqft, data = house)
+
+# Color the points and add the line for nbhd 1
+points(price ~ sqft, data = subset(house, nbhd == "nbhd01"), pch = 19, col = "blue")
+
+# Color the points and add the line for nbhd 2
+points(price ~ sqft, data = subset(house, nbhd == "nbhd02"), pch = 19, col = "red")
+
+# Color the points and add the line for nbhd 3
+points(price ~ sqft, data = subset(house, nbhd == "nbhd03"), pch = 19, col = "grey")
+
+# Finall, we'll add a "global line"
+abline(lm0, lwd = 4)
+```
+
+So we can see that the lines for the individual neighborhoods are all less steep compared to the overall "global" line for the aggregated data. This visualization suggests that neighborhood is indeed a confounder for the price vs size relationship. 
+
+### Dummy variables
+
+To resolve the aggregation paradox in this exercise, let's apply a "split and fit" strategy: (1) Split the data into subsets, one for each group; and (2) Fit a separate model to each subset. 
+
+With only a single grouping variable, the "split and fit" strategy often works just fine. But with multiple grouping variables, it gets cumbersome quickly. So I'll walk through an altnerative strategy that will prove to be much more useful than split and fit: dummy variables and interactions.
+
+Recall that a dummy variable is a 0/1 indicator of membership in a particular group. Here's how we introduce dummy variables in a regression model. 
+
+```{r, echo = TRUE}
+lm4 <- lm(price ~ sqft + nbhd, data = house)
+coef(lm4)
+```
+The output says that there are three different lines for three different neighborhoods:
+- *Neighborhood 1*: This is the baseline price, so 21241 + 46.39 * sqft
+- *Neighborhood 2*: Price = (21241 + 10569) + 46.39 * sqft
+- *Neighborhood 3*: Price = (21241 + 41535) + 46.39 * sqft
+
+In other words, there are three different lines with three different intercepts and the same slope (46.39). The coefficient labeled "intercept" is the intercept for the baseline category (i.e., neighborhood 1). The coefficients on the nbhd02 and nbhd03 dummy variables are the offsets. 
+
+### Interactions
+
+If we believe that the price vs size relationship is different for each neighborhood, we'll want to introduce the interaction term:
+
+```{r, echo = TRUE}
+lm5 <- lm(price ~ sqft + nbhd + nbhd:sqft, data = house)
+coef(lm5)
+```
+
+We can think of this model being the following: (1) *The influence on square foot on price* (e.g., Is there a difference houses of different sizes and their price?). *The influence of neighborhood on the house's price* (e.g., Is there a difference between house price and neighborhood?); and (3) *The joint influence of house size and the neighborhood they're in* (e.g., Does the difference between mean house price in neighborhoods 1, 2, and 3 depend on the square footage?). 
+
+So we are allowing both the slope and intercept to differ from neighborhood to neighborhood. The rules are:
+- The coefficient on the dummy variables get added to the baseline intercept to form each neighborhood-specific intercept.
+- The coefficients on the interaction terms get added to the baseline slope to form each neighborhood-specific slope.
+
+Thus, our model output says:
+- *Neighborhood 1 (the baseline)*: price = 32906 + 40.30 * sqft
+- *Neighborhood 2*: price = (32906 - 7224) + (40.30 + 9.13) * sqft
+- *Neighborhood 3*: price = (32906 + 23753) + (40.30 + 9.02) * sqft
+
+### Multiple categorical predictors
+Now that we have an idea about dummy variables and interactions, we can add as many categorical variables as we deem appropriate. For example, consider the following model:
+
+```{r, echo = TRUE}
+lm6 <- lm(price ~ sqft + nbhd + brick + brick:sqft, data = house)
+coef(lm6)
+```
+
+So here there are offsets for neighborhoods 2 and 3, as well as for brick houses (brick = yes). There are offsets with respect to the baseline case of non-brick houses in neighborhood 1. 
+
+### ANOVA in the presence of correlated predictors
+Recall from above in the *reaction time* output, we learned that an analysis of variance can be used to partition variation in the outcome among the individual predictor variables in a regression model. An ANOVA table is constructed by sequentially adding variables to hte model and tracking the amount by which the predictive ability of the model improves at each stage. We measured the improve by change in predictable variation (PV) or equivalently the reduction in the residual sums of squares (unpredictable variation, UV). To do this, we need our "simple_anova" function.
+
+If we run an analysis of variance on our first model above, we'll get the following:
+
+```{r, echo = TRUE}
+lm6 <- lm(price ~ sqft+ nbhd + brick + brick:sqft, data = house)
+simple_anova(lm6)
+```
+It looks as though the neighborhood leads to the largest improvements in predictive power (sd_improve = 7215), followed by sqft (4393), and then brick (2756).
+
+But what if we arbitrarily change the order in which we add the variables?
+
+```{r, echo = TRUE}
+lm6alt <- lm(price ~ brick + nbhd + sqft + brick:sqft, data = house)
+simple_anova(lm6alt)
+```
+
+Now the importance of brick and neighborhood looks much larger, and the importance of size a bit smaller. But the coefficients in the two models are exactly the same.
+
+```{r, echo = TRUE}
+# Coefficients for each of the models
+coef(lm6)
+coef(lm6alt)
+```
+
+When the predictor variables are correlated with each other, an ANOVA for a regression model - but not the model itself - will depend upon the order in which those variables are added. *This is because the first predictor you add greedily takes credit for all the information it shares in common with any other predictors that are subsequently added to the model.* Thus, the moral of the story is that there is no such thing as "the" ANOVA table for a regression model with correlated predictors. There are multiple ANOVA tables, one for each possible ordering of the variables. So there is no unique way to unambiguously assign credit to the individual varaibles in the model. 
+
+### Advanced plotting 
+You can use a lattice plot to reproduce the "split and fit" strategy from above. So you split the data into subsets and fit a line to each one. Here's one way that involves defining a custom "panel function" that is used by xplot.
+
+```{r, echo = TRUE}
+# Define a custom plotting function to be applied at each level
+plot_with_lines <- function(x, y) {
+  panel.xyplot(x, y)
+  model_for_panel = lm(y ~ x)
+  panel.abline(model_for_panel)
+}
+
+#Pass this custom plotting function to xyplot
+xyplot(price ~ sqft | nbhd, data = house, panel = plot_with_lines)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

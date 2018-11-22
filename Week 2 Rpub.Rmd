@@ -1,0 +1,217 @@
+---
+title: "Week 2: Beyond straight lines"
+author: "Benjamin Kinsella"
+date: "11/5/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(mosaic)
+library(ggplot2)
+```
+
+## Week 2 of stats for moi
+Back to cover material for the second setup, this time focusing on fitting nonlinear curves using least squares criterion. Beyond straight lines, I'll consider parameters of a statistical model, the least-squares criterion, fitted values and residuals in a LM, their interpretation, and overall goals of the analysis. I'll be going through a few data sets, one on utility bills vs temperatures, another on infant mortality, and one on a market model. 
+
+
+##Utility bills vs. temperatures
+Simple linear regressions are easy, so let's learn how to fit nonlinear models by least squares using a simple trick: adding powers (squared, cubed, etc.) of the original predictor variable (X). We'll see that the new variables can be defined in terms of the old ones. 
+
+To get started, let's load all the necessary packages and the utilities data set:
+
+```{r, echo = TRUE}
+utilities <- read.csv("http://jgscott.github.io/teaching/data/utilities.csv")
+```
+
+As good practice, I'll take a quick look at the summary of variables
+
+```{r, echo = TRUE}
+summary(utilities)
+```
+
+Okay, looks good. But notice billing days? We need to define a near variable because of the nature of this data set. 
+
+###Defining a new variable in terms of existing ones
+The goal of looking at this data set is to model the monthly gas bill in terms of temperature. So the lower the temp, the higher the bill. There's a curve ball here, however. Different billing periods have different numbers of billing days. See?
+
+```{r, echo = TRUE}
+hist(utilities$billingDays, breaks = 20)
+```
+
+We'll probably want to be measuring gas usage per day, rather than over the ENTIRE billing period. To do so, we need to define a new variable, called daily.average.gasbill:
+
+```{r, echo = TRUE}
+utilities$daily.average.gasbill <- utilities$gasbill/utilities$billingDays
+```
+
+Now that we've done that, we need to fit a linear model and add a line to the plot. Let's see how it looks:
+
+```{r, echo = TRUE}
+plot(daily.average.gasbill ~ temp, data = utilities)
+
+lm1 <- lm(daily.average.gasbill ~ temp, data = utilities)
+
+points(fitted(lm1) ~ temp, data = utilities, col = "red", pch = 19)
+abline(lm1)
+
+plot(resid(lm1) ~ temp, data = utilities)
+```
+
+Look again, because I'd say that this model doesn't do a good job. That is, we're fitting a linear model to obviously non-linear data (see the curvature at the end?). In the second plot with the residuals it's a bit more obvious. There is still some systematic variation in the residuals as a function of the predictor value, temp. 
+
+###Polynomial regression models
+One approach to address this shortcoming is to fit a parabola (remember from middle school?). That is, y versus x and x^2. To fit a model with a quadratic term:
+
+```{r, echo = TRUE}
+lm2 <- lm(daily.average.gasbill ~ temp + I(temp^2), data = utilities)
+
+plot(daily.average.gasbill ~ temp, data = utilities)
+points(fitted(lm2) ~ temp, data = utilities, col = "blue", pch = 19)
+```
+
+Nice! In the above model statement, the I(temp^2) is the way we tell R to treat temperature-squared as an additional variable in the model. We could also add higher powers of temperature, although the quadratic fit looks sensible here. As a next step, we could draw a nice smooth curve by plugging in the coefficent of the model directly to the curve function:
+
+```{r, echo = TRUE}
+plot(daily.average.gasbill ~ temp, data = utilities)
+mybeta <- coef(lm2)
+curve(mybeta[1] + mybeta[2]*x + mybeta[3]*x^2, col = "blue", add = TRUE)
+```
+
+Now on to the next data set that looks economic development by transforming variables.
+
+##Economic development and infant mortality
+In this walk through, I show how to fit a power law to data using linear least squares and log transformations. The log transform is useful for data bounded below 0 OR data that span many orders of magnitude. First let's import the files and look at them:
+
+```{r, echo = TRUE}
+infmort <- read.csv("http://jgscott.github.io/teaching/data/infmort.csv")
+summary(infmort)
+```
+
+Okay, perfect. As we see, the variables are infnant deaths per 1000 live births and GDP per capita in US dollars. We'll start by plotting the data.
+
+```{r, echo = TRUE}
+plot(mortality ~ gdp, data = infmort)
+```
+
+What do we observe? Well, for started, on the left, there's some unusual bunching of the data. This is because GDP is a highly skewed variable that ranges from small economies and only a few large ones. This is fairly obvious in a histogram:
+
+```{r, echo = TRUE}
+hist(infmort$gdp, breaks = 20)
+```
+
+Above, we observe a long right tail, notably the few countries with large GDPs and a larger frequency of countries with small GDP. This suggests that we should try using the logarithm of GDP, which will have the main effect of unbunching the data. I'll plot the infant mortality versus log GDP and specify that I want the X variable transformed to a log-scale.
+
+```{r, echo = TRUE}
+plot(mortality ~ log(gdp), data = infmort)
+```
+
+Okay, so the plot looks a little better, but notice how the points are bunched toward the bottom of the plot? This suggests that we might also try taking the log of the Y variable, too:
+
+```{r, echo = TRUE}
+plot(log(mortality) ~ log(gdp), data = infmort)
+```
+
+See how a fit line would fit here?! Let's go ahead and find the intercepts and add a line straight to the plot on the log scale:
+
+```{r, echo = TRUE}
+lm1 <- lm(log(mortality) ~ log(gdp), data = infmort)
+coef(lm1)
+plot(log(mortality) ~ log(gdp), data = infmort)
+abline(lm1)
+```
+
+###Visualizing the fitted power law on the original scale
+Supper we wanted to show the model on the original scale? We know that linear model on the log-log scale corresponds to a power on the original scale. Let's exploit this to generate a plot of the fitted curve. First, let's remember what the data looks like on the original scale.
+
+```{r, echo = TRUE}
+plot(mortality ~ gdp, data = infmort)
+```
+
+Okay, so the above is the original. Remember the bunching in the left corner? Next, let's get the fitted values on the log-log scale and then transform them back to the original scale. Because the exponential is the inverse of the log transform, we do this by exponentiating the fitted values. Here's the math:
+
+```{r, echo = TRUE}
+#Extract the coefficients and compute the fitted values "by hand"
+mybeta <- coef(lm1)
+logmort.pred <- mybeta[1] + mybeta[2]*log(infmort$gdp)
+
+#Tranform the fitted values to the original scale
+mort.pred <- exp(logmort.pred)
+```
+
+Now we can go ahead and add the predicted points to the plot in a different color and point style:
+
+```{r, echo = TRUE}
+plot(mortality ~ gdp, data = infmort)
+points(mort.pred ~ gdp, data = infmort, col = "blue", pch = 18)
+```
+
+Interestingly, if we type in "?points" to the console, we can see the options for point style (pch). And last but not least, we could also add the fitted curve directly to the scatter plot using the curve function. Based on what we know about power laws and log transformations, we do the following:
+
+```{r, echo = TRUE}
+plot(mortality ~ gdp, data = infmort)
+curve(exp(mybeta[1]) * x^(mybeta[2]), add = TRUE, col = "blue")
+```
+
+##Market Model
+For this exercise, we look at the marketmodel.csv data set. Each row is a week of data on the stock market, and each column is an asset:
+
+SPY: the S&P 500
+AAPL: Apple
+GOOG: Google
+MRK: Merck
+JNJ: Johnson and Johnson
+WMT: Wal Mart
+TGT: Target
+
+Let's get started:
+
+
+```{r, echo = TRUE}
+Market <- read.csv("https://jgscott.github.io/STA371H_Spring2018/data/marketmodel.csv")
+summary(Market)
+```
+
+The individual entries are the weekly returns: that is, the change in that stock's price from the close of one Monday to the close of the next Monday. These are on a 0-to-1 scale, so that 0.1 is a 10% return, etc.
+
+(A) Here we're going to regress the returns for each of the 6 stocks individually on the return of S&P 500. 
+
+```{r, echo = TRUE}
+
+#1) Apple
+lm1 <- lm(AAPL ~ SPY, data = Market)
+coef(lm1)
+
+#2) Google
+lm2 <- lm(GOOG ~ SPY, data = Market)
+coef(lm2)
+
+#3) Merck
+lm3 <- lm(MRK ~ SPY, data = Market)
+coef(lm3)
+
+#4) Johnson and Johnson
+lm4 <- lm(JNJ ~ SPY, data = Market)
+coef(lm4)
+
+#5) Walmart
+lm5 <- lm(WMT ~ SPY, data = Market)
+coef(lm5)
+
+#6) Target
+lm6 <- lm(TGT ~ SPY, data = Market)
+coef(lm6)
+```
+
+Using these data, we can ask ourselves a series of questions, such as:
+
+(A) Which stock seems to be the most tightly coupled to the movements of the wider market? (And what does "most tightly coupled" means?)
+
+(B) What do we notice about the intercepts? Are they mostly small, or mostly large? How would I interpret these intercepts in terms of whether any of the individual stocks appear to be outperforming the market on a systematic basis?
+
+(C) Does the above estimate of the slope for Walmart versus the S&P 500 agree (roughly) with the “beta” reported by Yahoo Finance? If you notice a discrepancy, what would be a possible explanation.
+
+(D) Consider the 6 models you fit in Part (A). Each model leads to a set of residuals for one particular stock regressed against the S&P 500. Which set of residuals has the largest correlation with the Walmart residuals -- that is, the residuals from the model having Wal-Mart as the response variable? Why would this be?
+
+
