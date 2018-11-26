@@ -1,0 +1,371 @@
+---
+title: "Week 5: Sampling distributions, bootstrapping, and quantifying uncertainty"
+author: "Benjamin Kinsella"
+date: "11/21/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(mosaic)
+library(ggplot2)
+```
+
+This week I'll focus on several topics: (1) Sampling distributions and standard errors; (2) Bootstrapping; and (3) Confidence intervals. To do so, I'll go through several data sets:
+
+-The Ten Mile Race: Data from D.C.'s Cherry Blossom Run
+
+-Gone fishing: A repeated sampling of fishing in a fictional lake
+
+-The Wage Gap: Earnings between men and women at a tech firm
+
+And thanks to Professor Scott for providing excellent materials on his webpage. 
+
+## Introduction Sample: Ten Mile Race
+
+To refresh from last week, we'll go through the the Cherry Blossom Race data set. This race is help in Washington DC everyday. These are the results of the 2005 race. 
+
+The data frame includes 8,636 observations on the following variables: 
+
+- state: State of residence of runner
+- time: Official time from starting gun to finish line
+- net: The recorded time (in seconds) from when the runner crossed the starting line to when the runner crossed the finish line. This is generally less than the official time because of the large number of runners in the race.
+- age: Age of runner.
+- sex: Sex of runner with factor of two levels, "M" and "F".
+
+```{r, echo = FALSE}
+# Read in 10 mile race data
+library(mosaic)
+library(mosaicData)
+data(TenMileRace)
+```
+
+To get an idea about the relationship between the net recorded time and age of the runner, let's plot the data:
+
+```{r, echo = TRUE}
+# The model aggregrating men and women
+plot(net~age,data=TenMileRace, col='grey')
+lm1 = lm(net~age,data=TenMileRace)
+abline(lm1)
+summary(lm1)
+```
+
+However, there could be an influence on gender on the runner's net finish time. So let's plot a linear regression for both Males and Females.
+
+```{r, echo = TRUE}
+# Now disaggregating
+lmM = lm(net~age,data=subset(TenMileRace,sex=="M"))
+lmF = lm(net~age,data=subset(TenMileRace,sex=="F"))
+coef(lmM)
+coef(lmF)
+```
+
+We can look at the means of net finish times by gender. 
+
+```{r, echo = TRUE}
+mean(net ~ sex, data=TenMileRace)
+```
+
+Great! Recall that the baseline/offset form: The coefficients of this model are simply a different way of expressing the group means between men and women. Since we observe that there are differences between men and women, we can visualize this using the abline for each of the lm (i.e., lm1, lmM, lmF):
+
+```{r, echo = TRUE}
+# Clearly we get different effects due to age when we disaggregate
+plot(net~age,data=TenMileRace, col='grey', pch=19, cex=0.5)
+abline(lm1, col='black')
+abline(lmM, col='red')
+abline(lmF, col='blue')
+```
+
+Next, we'll look at the main effects of age and gender on finish time. First, I show the intercepts and coefficients, then I visualize the fit of the model. 
+
+```{r, echo = TRUE}
+# We can model this with main effects for age and sex
+lm2 = lm(net ~ age + sex, data= TenMileRace)
+coef(lm2)
+# A simple way to visualize the fit
+plotModel(lm2)
+```
+
+Now that we can visualize the running times for all individuals, with age and sex included in the model, let's look at the joint influence of the two variables on running times. *Recall that an interaction addresses whether the influence of one independent variable is altered by the level of another independent variable.*
+
+```{r, echo = TRUE}
+# With an interaction
+lm3 = lm(net ~ age + sex + age:sex, data= TenMileRace)
+coef(lm3)
+
+# Visualize the fit
+plotModel(lm3)
+```
+
+The above coefficients respond to (1) the influence of age on running times; (2) the influence of sex on running times; and (3) the joint influence of age and sex on running times - that is, *Does the difference between mean male and mean female running times depend on age?*. 
+
+Lastly, we'll look at a simple_anova table.
+
+```{r, echo = TRUE}
+# An ANOVA table
+source('http://jgscott.github.io/teaching/r/utils/class_utils.R')
+simple_anova(lm3)
+```
+
+Fromt the table above, it looks as though sex contributes the most to net running time (66.159). After comes age (3.87). The joint influence of age and gender (i.e., interaction) was not statistically significant. 
+
+After a motivating example, we'll now go on to look at sampling distributions using the gone.
+
+
+## Sampling Distributions
+
+This walkthrough looks at fictional data on fictional fish in a fictional lake :D. Let's meet the 8,000 fish who live in Lake Woebegone. 
+
+```{r, echo = TRUE}
+gonefishing <- read.csv("https://raw.githubusercontent.com/jgscott/learnR/master/gonefishing/gonefishing.csv")
+summary(gonefishing)
+```
+
+If we take a moment to look at the variation in length, height, width, and weight, we can start imagining that these fish come in many different shapes and sizes. Let's look at a histogram of weights for the entire fish population:
+
+```{r, echo = TRUE}
+hist(gonefishing$weight, breaks = 20)
+mean_weight_pop <- mean(gonefishing$weight)
+abline(v = mean_weight_pop, lwd = 4, col = "blue")
+```
+
+So the abline gave us the mean of the weights (518.965), calculated using the mean function. We also observe a considerable variation around the mean. Let's look at the sampling distribution of the sample mean.
+
+### The sampling distribution of the sample mean
+
+Let's say we go on the fishing trip and catch 30 fish. What would we expect the mean of our sample to be? Let's use R's ability to take a random sample in order to simulate this process.
+
+```{r, echo = TRUE}
+n_fish= 30
+
+#Take a random sample from the population of fish in the lake
+fishing_trip <- sample(gonefishing, n_fish)
+
+#Look at the measurments of the first five fish we caught
+head(fishing_trip)
+```
+
+Above, the row names tell us which fish (numbered 1 to 800 in the original data set) that we happened to catch on this trip. Because the sample is random, our particular fish will be different than the ones we see here. Next, let's compute the mean weight of the fish in our sample:
+
+```{r, echo = TRUE}
+mean_weight_sample <- mean(fishing_trip$weight)
+mean_weight_sample
+```
+
+The mean weight is going to be different each time we run it, such that it's generates a new sample mean from a new set of observations each time. Crucially, all these sample means differ from the true population mean of 519, which we calculated above.
+
+So that was yesterday's fishing trip. What about today's? Let's say we released the fish back into the lake and we're interested in taking a fresh sample from the population. We'll repeat the commands above to get a new sample.
+
+```{r, echo = TRUE}
+fishing_trip <- sample(gonefishing, n_fish)
+mean_weight_sample <- mean(fishing_trip$weight)
+mean_weight_sample
+```
+
+Today's sample mean will be different from yesterday's. Both will be different from the population mean. The next step is to get a sense of how the sample mean varied under lots and lots of samples (i.e., more than two). To do so, we will use mosaic's package functions for performing a Monte Carlo simulation. Let's try this:
+
+```{r, echo = TRUE}
+do(25)*{
+  fishing_trip <- sample(gonefishing, n_fish)
+  mean_weight_sample <- mean(fishing_trip$weight)
+  mean_weight_sample 
+}
+```
+
+Let's parse the above function. 
+1. We took our original code block for performing a random sample from the population and calculating the mean weight of the same.
+2. We placed that code block in curly braces {}
+3. We then told R to repeat that code block 25 times via the "do(25)*" command.
+
+The result above is 25 different sample means, each corresponding to a different random sample from a population. This process is an example of Monte Carlo simulation, wherein a computer is used to simulate a random process. Our code above produced 25 Monte Carlo samples. Next, let's make two small modifications. First, we'll do more than 25 Monte Carlo samples and we'll save the result.
+
+```{r, echo = TRUE}
+# Save the Monte Carlo output
+my_fishing_year <- do(365)*{
+  fishing_trip <- sample(gonefishing, n_fish)
+  mean_weight_sample <- mean(fishing_trip$weight)
+  mean_weight_sample
+}
+
+#Examine the first several entries
+head(my_fishing_year)
+```
+
+
+Great! So we see that my_fishing_year is a df with one column labeled "result". This column contains 365 sample means, one for each fishing trip (i.e., sample size of 30 from the population). Let's look at a histogram of these simulated sample means:
+
+```{r, echo = TRUE}
+hist(my_fishing_year$result, breaks = 20)
+sd(my_fishing_year$result)
+```
+
+We call this the sampling distribution of the sample mean. The dispersion of this distribution tells us how precise the mean from any given sample of size (i.e., 30 fish) approximates the population mean. *Thus, she SD of this sampling distribution is a natural measure of this dispersion. For this reason, it is usually called the standard error of the sample mean.*
+
+
+### The sampling distribution of the ordinary least squares estimator
+So above we learned the basic trick of simulating a sampling distribution. We can now apply that to any kind of statistical model. For example, let's say we wanted to fit a model for the weight of a fish versus it's volume.
+
+```{r, echo = TRUE}
+# Define the volume variable and add it to the original data frame
+gonefishing$volume <- gonefishing$height * gonefishing$length * gonefishing$width
+
+# Model weight versus volume
+plot(weight ~ volume, data = gonefishing)
+lm0 <- lm(weight ~ volume, data = gonefishing)
+abline(lm0)
+coef(lm0)
+```
+
+For the population, it looks like the slope of the line is about 4.24 grams per cubic inch. And what about for our sample of 30 fish? Let's execute this block of code a few times and compare the different lines we get. 
+
+```{r, echo = TRUE}
+# Plot the popuation
+plot(weight ~ volume, data = gonefishing)
+# Take a sample, show the points, and fit a straight line
+n_fish <- 30
+fishing_trip <- sample(gonefishing, n_fish)
+lm1 <- lm(weight ~ volume, data = fishing_trip)
+points(weight ~ volume, data = fishing_trip, pch = 19, col = "orange")
+abline(lm1, lwd = 3, col = "orange")
+```
+
+For each Monte Carlo sample, of course we'll see a slightly different fitted line, which reflects the variability from sample to sample. The line from our sample should be close to the true population line, but they won't be exactly the same.
+
+Next, let's use the same approach as above to look at the sampling distribution of the least-squares estimator from a sample size of 30. *This time we'll collect the intercept and slope of the least-squares line, rather than the sample mean of the weight.* We'll use 365 Monte Carlo samples to simulate a year of fishing trips. 
+
+```{r, echo = TRUE}
+my_fishing_year <- do(365)*{
+  fishing_trip <- sample(gonefishing, n_fish)
+  lm1 <- lm(weight ~ volume, data = fishing_trip)
+  coef(lm1)
+}
+```
+
+For this simulation, look at how my_fishing_year variable now has two columns. These two represent the intercept and slope for the volume variable. To examine the sampling distribution of the slope, we could look at a histogram and compute the standard error.
+
+```{r, echo = TRUE}
+hist(my_fishing_year$volume)
+sd(my_fishing_year$volume)
+```
+
+In this case, 365 different fishing trips of 30 fish, 365 different estimate slopes creaes a sampling distribution.
+
+### Fancy plots (A brief overview)
+Professor Scott includes a bit of syntax to get really fancy with R plots. Here's an example where we superimpose the fitted lines from 100 different samples on a plot of hte population. There's also some extra flags passed to the plotting function to make things more visually appealing
+
+```{r, echo = TRUE}
+n_fish <- 30
+ghost_grey <- rgb(0.1, 0.1, 0.1, 0.2)
+ghost_red <- rgb(0.8, 0.1, 0.1, 0.2)
+plot(weight ~ volume, data = gonefishing, pch = 19, col = ghost_grey, las = 1)
+abline(lm0, col = "darkgrey")
+
+# Take 100 samples and fit a straight line to each one
+for(i in 1:100) {
+  fishing_trip <- sample(gonefishing, n_fish)
+  lm1 <- lm(weight ~ volume, data = fishing_trip)
+  abline(lm1, col = ghost_red)
+}
+```
+
+
+The "fan" of different fitted lines provides a visual depiction of the sampling distribution of the OLS estimator. Note: if you want to see all the different graphical parameters, try typing ?par into the console.
+
+Now on to the next exercise on wage gaps at a large tech firm.
+
+## The Wage Gap
+
+This walk-through will look at whether there is a "wage gap" at a tech firm between male and female employees with similar qualifications. We will use a multiple regression to adjust for the effect of education and experience in evaluating the correlation between an employee's sex and his/her annual salary. After attempting this exercise, one should be able to (1) Fit a regression model; (2) Correctly interpret the estimated coefficients; (3) Quantify uncertainty about parameters in a multiple-regression model using bootstrapping.
+
+
+```{r, echo = TRUE}
+salary <- read.csv("http://jgscott.github.io/teaching/data/salary.csv")
+summary(salary)
+```
+
+
+We see from the above output that the variables used in this data are:
+- Salary: Annual salary in dollars
+- Experience: Months of experience at the particular company
+- Months: Total months of work experience, including all previous jobs
+- Sex: Whether the employee is male or female
+
+Let's first look at the distribution of salary by sex:
+
+```{r, echo = TRUE}
+mean(Salary ~ Sex, data = salary)
+boxplot(Salary ~ Sex, data = salary, names = c("Female", "Male"))
+```
+
+
+### Statistical adjustment for experience
+
+Interestingly, it appears at first glance that women are paid more at this company than men, on average. However, does the story change if we adjust for work experience? 
+
+```{r, echo = TRUE}
+plot(Salary ~ Experience, data = salary)
+
+lm1 <- lm(Salary ~ Experience, data = salary)
+coef(lm1)
+```
+
+Before delving into the results, we expect more experienced workers to be paid more, all else being equal. So thinking about the above plot, how do these residuals - that is, salary adjusted for experience - look when we stratify them by sex?
+
+```{r, echo = TRUE}
+boxplot(resid(lm1) ~ salary$Sex)
+```
+
+What a difference! Now it looks like men are being paid more than women for an equivalent amount of work experience since men have a positive residual, on average. The story is similar if we look at overall work experience, including jobs prior to the one with this particular company:
+
+```{r, echo = TRUE}
+plot(Salary ~ Months, data = salary)
+lm2 <- lm(Salary ~ Months, data = salary)
+coef(lm2)
+```
+
+The story in the residuals is similar: The distribution of adjusted salaries for men is shifted upward compared to that for women:
+
+```{r, echo = TRUE}
+boxplot(resid(lm2) ~ salary$Sex)
+```
+
+### Fitting a multiple regression model by least squares
+
+To get at the partial relationship between gender and salary, we must fit a multiple-regression model that accounts for (1) experience with the company and (2) total number of months of professional work. We will also ajust for a third variable: years of post-secondary education. It is straightforward to fit such a model by least squares in R. 
+
+```{r, echo = TRUE}
+lm3 <- lm(Salary ~ Experience + Months + Education + Sex, data = salary)
+coef(lm3)
+```
+
+According to this model, men are paid $2,320.54 more per year than women with similar levels of education and work experience, both overall and with this particular company. 
+
+### Bootstrapping a multiple regression model
+
+We can quantify our uncertainty about this effect via bootsrapping. 
+
+```{r, echo = TRUE}
+# Bootstrap sample
+boot3 <- do(5000)*{
+  lm(Salary ~ Experience + Months + Education + Sex, data = resample(salary))
+}
+
+# Histogram of boostrap sample for sex
+hist(boot3$Sex)
+
+# Confidence interval
+confint(boot3)
+```
+
+
+In this case, the bootstrapped confidence interval runs from about $200 to about $4300. (each confidence interval will be slightly different because of the Monte Carlo variability inherent to bootstrapping.) This is quite a wide range: we cannot rule out that the wage gap is quite small, but nor can we rule out that it might run into the thousands of dollars.
+
+
+
+
+
+
+
+
+
